@@ -26,7 +26,12 @@ func main() {
 		log.Fatalf("Error while creating HelloAdapter :%v", err)
 	}
 
-	runSayHello(*helloAdapter, "Bruce Banner")
+	// runSayHello(*helloAdapter, "Bruce Banner")
+
+	// helloAdapter.SayHelloServerStream(context.Background(), "Scarlet Witch")
+
+	// helloAdapter.SayHelloClientStream(context.Background(), []string{"Vallabh", "Ashish", "Steve", "Somnath"})
+	helloAdapter.SayHelloContinuous(context.Background(), []string{"Superman", "Joker", "Batman", "Aquaman", "Flash"})
 }
 
 func runSayHello(adapter adapter.HelloAdapter, name string) {

@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"time"
 
+	protogenResiliency "github.com/VallabhSLEPAM/go-with-grpc/protogen/go/resiliency"
 	bankadapter "github.com/VallabhSLEPAM/grpc-client/internal/adapter/bank"
 	adapter "github.com/VallabhSLEPAM/grpc-client/internal/adapter/hello"
 	"github.com/VallabhSLEPAM/grpc-client/internal/adapter/resiliency"
@@ -14,10 +15,32 @@ import (
 	applicationResiliency "github.com/VallabhSLEPAM/grpc-client/internal/application/domain/resiliency"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 
+	"github.com/sony/gobreaker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+var circuitBreaker *gobreaker.CircuitBreaker
+
+func init() {
+	myBreaker := gobreaker.Settings{
+		Name: "my-circuit-breaker",
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			failureRatios := float64(counts.TotalFailures) / float64(counts.Requests)
+
+			log.Printf("Circuit Breaker %v, Total requests %v. Failure ratio: %v\n", counts.TotalFailures, counts.Requests, failureRatios)
+			return failureRatios > 0.6 && counts.Requests >= 3
+		},
+		Timeout:     4 * time.Second,
+		MaxRequests: 3,
+		OnStateChange: func(name string, from, to gobreaker.State) {
+			log.Printf("Circuit Breaker %v changed state from %v to %v\n", name, from, to)
+		},
+	}
+
+	circuitBreaker = gobreaker.NewCircuitBreaker(myBreaker)
+}
 
 func main() {
 
@@ -33,15 +56,15 @@ func main() {
 		),
 	)
 
-	opts = append(opts,
-		grpc.WithStreamInterceptor(
-			grpc_retry.StreamClientInterceptor(
-				grpc_retry.WithCodes(codes.Unknown, codes.Internal),
-				grpc_retry.WithMax(4),
-				grpc_retry.WithBackoff(grpc_retry.BackoffLinear(3*time.Second)),
-			),
-		),
-	)
+	// opts = append(opts,
+	// 	grpc.WithStreamInterceptor(
+	// 		grpc_retry.StreamClientInterceptor(
+	// 			grpc_retry.WithCodes(codes.Unknown, codes.Internal),
+	// 			grpc_retry.WithMax(4),
+	// 			grpc_retry.WithBackoff(grpc_retry.BackoffLinear(3*time.Second)),
+	// 		),
+	// 	),
+	// )
 
 	// Create a gRPC client with TLS credentials
 	grpcClient, err := grpc.NewClient("localhost:9090", opts...)
@@ -53,10 +76,10 @@ func main() {
 	defer grpcClient.Close()
 
 	// Adapter is just a wrapper to create Service client from protogen file passing it the grpc client created earlier
-	helloAdapter, err := adapter.NewHelloAdapter(grpcClient)
-	if err != nil {
-		log.Fatalf("Error while creating HelloAdapter :%v", err)
-	}
+	// helloAdapter, err := adapter.NewHelloAdapter(grpcClient)
+	// if err != nil {
+	// 	log.Fatalf("Error while creating HelloAdapter :%v", err)
+	// }
 
 	// runSayHello(*helloAdapter, "Bruce Banner")
 
@@ -65,7 +88,7 @@ func main() {
 	// helloAdapter.SayHelloClientStream(context.Background(), []string{"Vallabh", "Ashish", "Steve", "Somnath"})
 
 	// Call the gRPC server method from adapter wrapper by making use of the service client created earlier
-	helloAdapter.SayHelloContinuous(context.Background(), []string{"Superman", "Joker", "Batman", "Aquaman", "Flash"})
+	// helloAdapter.SayHelloContinuous(context.Background(), []string{"Superman", "Joker", "Batman", "Aquaman", "Flash"})
 
 	// bAdapter, err := bankadapter.NewBankAdapter(grpcClient)
 	// if err != nil {
@@ -81,10 +104,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error while creating ResiliencyAdapter :%v", err)
 	}
-	runUnaryResiliencyWithTimeout(resiliencyAdapter, 0, 5, []uint32{applicationResiliency.OK}, 5*time.Second)
+	// runUnaryResiliencyWithTimeout(resiliencyAdapter, 0, 5, []uint32{applicationResiliency.OK}, 5*time.Second)
 
-	runServerResiliencyWithTimeout(resiliencyAdapter, 2, 6, []uint32{applicationResiliency.OK}, 3*time.Second)
-	runClientResiliencyWithTimeout(resiliencyAdapter, 2, 8, []uint32{applicationResiliency.OK}, 60*time.Second)
+	//runServerResiliencyWithTimeout(resiliencyAdapter, 2, 6, []uint32{applicationResiliency.OK}, 3*time.Second)
+	//runClientResiliencyWithTimeout(resiliencyAdapter, 2, 8, []uint32{applicationResiliency.OK}, 60*time.Second)
+
+	for i := 0; i < 300; i++ {
+		runUnaryResiliencyWithCircuitBreaker(resiliencyAdapter, 0, 3, []uint32{applicationResiliency.OK, applicationResiliency.UNKNOWN})
+		time.Sleep(time.Second)
+	}
 
 }
 
@@ -204,4 +232,19 @@ func runClientResiliency(adapter *resiliency.ResiliencyAdapter, minDelay, maxDel
 func runBidirectionalResiliency(adapter *resiliency.ResiliencyAdapter, minDelay, maxDelay int, statusCodes []uint32) {
 
 	adapter.BiDirectionalResiliency(context.Background(), minDelay, maxDelay, statusCodes, 4)
+}
+
+// WithCircuit Breaker
+func runUnaryResiliencyWithCircuitBreaker(adapter *resiliency.ResiliencyAdapter, minDelay, maxDelay int, statusCodes []uint32) {
+
+	cBreakerRes, cBreakerErr := circuitBreaker.Execute(func() (interface{}, error) {
+		return adapter.UnaryResiliency(context.Background(), minDelay, maxDelay, statusCodes)
+	})
+
+	if cBreakerErr != nil {
+		log.Fatalln("Failed to call UnaryResiliency: ", cBreakerErr)
+	} else {
+		log.Println(cBreakerRes.(*protogenResiliency.ResiliencyResponse).DummyString)
+
+	}
 }

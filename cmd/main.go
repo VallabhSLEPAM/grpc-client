@@ -12,14 +12,10 @@ import (
 	adapter "github.com/VallabhSLEPAM/grpc-client/internal/adapter/hello"
 	"github.com/VallabhSLEPAM/grpc-client/internal/adapter/resiliency"
 	"github.com/VallabhSLEPAM/grpc-client/internal/application/domain/bank"
-	applicationResiliency "github.com/VallabhSLEPAM/grpc-client/internal/application/domain/resiliency"
-	"github.com/VallabhSLEPAM/grpc-client/internal/interceptor"
-	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 
 	"github.com/sony/gobreaker"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 )
 
 var circuitBreaker *gobreaker.CircuitBreaker
@@ -46,16 +42,22 @@ func init() {
 func main() {
 
 	var opts []grpc.DialOption
-	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	opts = append(opts,
-		grpc.WithUnaryInterceptor(
-			grpc_retry.UnaryClientInterceptor(
-				grpc_retry.WithCodes(codes.Unknown, codes.Internal),
-				grpc_retry.WithMax(4),
-				grpc_retry.WithBackoff(grpc_retry.BackoffExponential(2*time.Second)),
-			),
-		),
-	)
+	creds, err := credentials.NewClientTLSFromFile("ssl/ca.crt", "")
+	if err != nil {
+		log.Fatalln("Error creating client credentials: ", err)
+	}
+
+	opts = append(opts, grpc.WithTransportCredentials(creds))
+	// opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// opts = append(opts,
+	// 	grpc.WithUnaryInterceptor(
+	// 		grpc_retry.UnaryClientInterceptor(
+	// 			grpc_retry.WithCodes(codes.Unknown, codes.Internal),
+	// 			grpc_retry.WithMax(4),
+	// 			grpc_retry.WithBackoff(grpc_retry.BackoffExponential(2*time.Second)),
+	// 		),
+	// 	),
+	// )
 
 	// opts = append(opts,
 	// 	grpc.WithStreamInterceptor(
@@ -67,20 +69,20 @@ func main() {
 	// 	),
 	// )
 
-	opts = append(opts,
-		grpc.WithChainUnaryInterceptor(
-			interceptor.LogUnaryClientInterceptor(),
-			interceptor.BasicUnaryClientInterceptor(),
-			interceptor.UnaryTimeoutInterceptor(5*time.Second),
-		))
+	// opts = append(opts,
+	// 	grpc.WithChainUnaryInterceptor(
+	// 		interceptor.LogUnaryClientInterceptor(),
+	// 		interceptor.BasicUnaryClientInterceptor(),
+	// 		interceptor.UnaryTimeoutInterceptor(5*time.Second),
+	// 	))
 
-	opts = append(opts,
-		grpc.WithChainStreamInterceptor(
-			interceptor.BasicClientStreamInterceptor(),
-			interceptor.LogStreamClientInterceptor(),
-			interceptor.TimeoutStreamClientIntereptor(5*time.Second),
-		),
-	)
+	// opts = append(opts,
+	// 	grpc.WithChainStreamInterceptor(
+	// 		interceptor.BasicClientStreamInterceptor(),
+	// 		interceptor.LogStreamClientInterceptor(),
+	// 		interceptor.TimeoutStreamClientIntereptor(5*time.Second),
+	// 	),
+	// )
 
 	// Create a gRPC client with TLS credentials
 	grpcClient, err := grpc.NewClient("localhost:9090", opts...)
@@ -92,14 +94,14 @@ func main() {
 	defer grpcClient.Close()
 
 	// Adapter is just a wrapper to create Service client from protogen file passing it the grpc client created earlier
-	// helloAdapter, err := adapter.NewHelloAdapter(grpcClient)
-	// if err != nil {
-	// 	log.Fatalf("Error while creating HelloAdapter :%v", err)
-	// }
+	helloAdapter, err := adapter.NewHelloAdapter(grpcClient)
+	if err != nil {
+		log.Fatalf("Error while creating HelloAdapter :%v", err)
+	}
 
-	// runSayHello(*helloAdapter, "Bruce Banner")
+	runSayHello(*helloAdapter, "Bruce Banner")
 
-	// helloAdapter.SayHelloServerStream(context.Background(), "Scarlet Witch")
+	helloAdapter.SayHelloServerStream(context.Background(), "Scarlet Witch")
 
 	// helloAdapter.SayHelloClientStream(context.Background(), []string{"Vallabh", "Ashish", "Steve", "Somnath"})
 
@@ -116,12 +118,12 @@ func main() {
 	//runSummarizeTransactions(bAdapter, "7835697002", 5)
 	// runTransferMultiple(bAdapter, "7835697001", "7835697002", 10)
 
-	resiliencyAdapter, err := resiliency.NewResiliencyAdapter(grpcClient)
-	if err != nil {
-		log.Fatalf("Error while creating ResiliencyAdapter :%v", err)
-	}
-	runUnaryResiliency(resiliencyAdapter, 0, 5, []uint32{applicationResiliency.OK})
-	runUnaryResiliencyWithTimeout(resiliencyAdapter, 0, 5, []uint32{applicationResiliency.OK}, 5*time.Second)
+	// resiliencyAdapter, err := resiliency.NewResiliencyAdapter(grpcClient)
+	// if err != nil {
+	// 	log.Fatalf("Error while creating ResiliencyAdapter :%v", err)
+	// }
+	// runUnaryResiliency(resiliencyAdapter, 0, 5, []uint32{applicationResiliency.OK})
+	// runUnaryResiliencyWithTimeout(resiliencyAdapter, 0, 5, []uint32{applicationResiliency.OK}, 5*time.Second)
 
 	//runServerResiliencyWithTimeout(resiliencyAdapter, 2, 6, []uint32{applicationResiliency.OK}, 3*time.Second)
 	//runClientResiliencyWithTimeout(resiliencyAdapter, 2, 8, []uint32{applicationResiliency.OK}, 60*time.Second)

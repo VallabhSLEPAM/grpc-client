@@ -13,6 +13,7 @@ import (
 	"github.com/VallabhSLEPAM/grpc-client/internal/adapter/resiliency"
 	"github.com/VallabhSLEPAM/grpc-client/internal/application/domain/bank"
 	applicationResiliency "github.com/VallabhSLEPAM/grpc-client/internal/application/domain/resiliency"
+	"github.com/VallabhSLEPAM/grpc-client/internal/interceptor"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 
 	"github.com/sony/gobreaker"
@@ -66,6 +67,21 @@ func main() {
 	// 	),
 	// )
 
+	opts = append(opts,
+		grpc.WithChainUnaryInterceptor(
+			interceptor.LogUnaryClientInterceptor(),
+			interceptor.BasicUnaryClientInterceptor(),
+			interceptor.UnaryTimeoutInterceptor(5*time.Second),
+		))
+
+	opts = append(opts,
+		grpc.WithChainStreamInterceptor(
+			interceptor.BasicClientStreamInterceptor(),
+			interceptor.LogStreamClientInterceptor(),
+			interceptor.TimeoutStreamClientIntereptor(5*time.Second),
+		),
+	)
+
 	// Create a gRPC client with TLS credentials
 	grpcClient, err := grpc.NewClient("localhost:9090", opts...)
 	if err != nil {
@@ -104,15 +120,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error while creating ResiliencyAdapter :%v", err)
 	}
-	// runUnaryResiliencyWithTimeout(resiliencyAdapter, 0, 5, []uint32{applicationResiliency.OK}, 5*time.Second)
+	runUnaryResiliency(resiliencyAdapter, 0, 5, []uint32{applicationResiliency.OK})
+	runUnaryResiliencyWithTimeout(resiliencyAdapter, 0, 5, []uint32{applicationResiliency.OK}, 5*time.Second)
 
 	//runServerResiliencyWithTimeout(resiliencyAdapter, 2, 6, []uint32{applicationResiliency.OK}, 3*time.Second)
 	//runClientResiliencyWithTimeout(resiliencyAdapter, 2, 8, []uint32{applicationResiliency.OK}, 60*time.Second)
 
-	for i := 0; i < 300; i++ {
-		runUnaryResiliencyWithCircuitBreaker(resiliencyAdapter, 0, 3, []uint32{applicationResiliency.OK, applicationResiliency.UNKNOWN})
-		time.Sleep(time.Second)
-	}
+	// runUnaryResiliencyWithMetadata(resiliencyAdapter, 0, 5, []uint32{applicationResiliency.OK})
+	//runServerResiliencyWithMetadata(resiliencyAdapter, 0, 5, []uint32{applicationResiliency.OK})
+
+	// for i := 0; i < 300; i++ {
+	// 	runUnaryResiliencyWithCircuitBreaker(resiliencyAdapter, 0, 3, []uint32{applicationResiliency.OK, applicationResiliency.UNKNOWN})
+	// 	time.Sleep(time.Second)
+	// }
 
 }
 
@@ -248,3 +268,28 @@ func runUnaryResiliencyWithCircuitBreaker(adapter *resiliency.ResiliencyAdapter,
 
 	}
 }
+
+// Without timeout
+// func runUnaryResiliencyWithMetadata(adapter *resiliency.ResiliencyAdapter, minDelay, maxDelay int, statusCodes []uint32) {
+
+// 	resp, err := adapter.UnaryResiliencyWithMetadata(context.Background(), minDelay, maxDelay, statusCodes)
+// 	if err != nil {
+// 		log.Fatalln("Failed to call UnaryResiliency", err)
+// 	}
+// 	log.Println(resp.DummyString)
+// }
+
+func runServerResiliencyWithMetadata(adapter *resiliency.ResiliencyAdapter, minDelay, maxDelay int, statusCodes []uint32) {
+
+	adapter.ServerResiliencyWithMetadata(context.Background(), minDelay, maxDelay, statusCodes)
+}
+
+// func runClientResiliencyWithMetadata(adapter *resiliency.ResiliencyAdapter, minDelay, maxDelay int, statusCodes []uint32) {
+
+// 	adapter.ClientResiliencyWithMetadata(context.Background(), minDelay, maxDelay, statusCodes, 3)
+// }
+
+// func runBidirectionalResiliencyWithMetadata(adapter *resiliency.ResiliencyAdapter, minDelay, maxDelay int, statusCodes []uint32) {
+
+// 	adapter.BiDirectionalResiliencyWithMetadata(context.Background(), minDelay, maxDelay, statusCodes, 4)
+// }
